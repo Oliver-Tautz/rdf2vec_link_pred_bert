@@ -22,8 +22,6 @@ from transformers import PreTrainedTokenizerFast
 from transformers import AutoModel
 import pickle
 
-
-
 # DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def get_embeddings(entities,bert_model,tokenizer):
     entities = [tokenizer.encode(x) for x in np.array(entities)]
@@ -423,9 +421,9 @@ if __name__ == '__main__':
 
     ### Load Bert
     # global variables are really hacky but fast to implement
-    
     global BERT_PATH 
     BERT_PATH = Path(args.bert_path)
+
     cfg = cfg_parser.read(BERT_PATH / 'config.ini')
     EMBEDDING_DIM = cfg.getint('TRAIN','VECTOR_SIZE')
     EPOCHS = args.epochs
@@ -469,6 +467,16 @@ if __name__ == '__main__':
             exit(-1)
     ###
 
+    SETTING_LP_WORK_FOLDER = BERT_PATH / 'link_prediction'
+    SETTING_LP_EMBEDDINGS_FOLDER = SETTING_LP_WORK_FOLDER / 'embeddings'
+    SETTING_LP_DATA_FOLDER = SETTING_LP_WORK_FOLDER / 'data'
+    SETTING_LP_PLOT_FOLDER = SETTING_LP_WORK_FOLDER / 'plot'
+    SETTING_LP_MODEL_FOLDER = SETTING_LP_WORK_FOLDER / 'model'
+
+    os.makedirs(SETTING_LP_EMBEDDINGS_FOLDER,exist_ok=True)
+    os.makedirs(SETTINGS_LP_DATA_FOLDER,exist_ok=True)
+    os.makedirs(SETTING_LP_PLOT_FOLDER,exist_ok=True)
+    os.makedirs(SETTING_LP_MODEL_FOLDER,exist_ok=True)
 
     dataset = args.dataset
     inductive = dataset == 'ilpc'
@@ -477,6 +485,8 @@ if __name__ == '__main__':
     lr = args.lr
     BATCH_SIZE = args.bs  # 1000
     HIDDEN_DIM = args.hidden
+
+
     run_name = 'rdf2vec_link_pred' + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     DEVICE = torch.device(args.device)
@@ -510,27 +520,27 @@ if __name__ == '__main__':
         # load RDF2Vec models for features
         wv_model = None# Word2Vec.load(f'./data/{dataset}_rdf2vec/model')
 
-        if not os.path.isfile(BERT_PATH / f"{dataset}_train.pt"):
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt"):
             data_train = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
                                       data_sample='train', wv_model=wv_model,
                                       relation_embeddings=relation_embeddings)
-            torch.save(data_train, BERT_PATH / f"{dataset}_train.pt")
+            torch.save(data_train, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt")
 
-        if not os.path.isfile(BERT_PATH / f"{dataset}_val.pt"):
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt"):
             data_val = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
                                     data_sample='valid',
                                     wv_model=wv_model, relation_embeddings=relation_embeddings)
             torch.save(data_val, BERT_PATH / f"{dataset}_val.pt")
 
-        if not os.path.isfile(BERT_PATH / f"{dataset}_test.pt"):
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt"):
             data_test = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
                                      data_sample='test',
                                      wv_model=wv_model, relation_embeddings=relation_embeddings)
-            torch.save(data_test, BERT_PATH / f"{dataset}_test.pt")
+            torch.save(data_test, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt")
 
-        data_train = torch.load(BERT_PATH / f"{dataset}_train.pt")
-        data_val = torch.load(BERT_PATH / f"{dataset}_val.pt")
-        data_test = torch.load(BERT_PATH / f"{dataset}_test.pt")
+        data_train = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt")
+        data_val = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt")
+        data_test = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt")
 
     if dataset == 'ilpc':
         wv_type = args.wv
@@ -688,10 +698,32 @@ if __name__ == '__main__':
                                                                                  entities_idx=entities_inference_idx)
         add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'test')                                                                           
         print('test mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
-        torch.save(model_tail_pred.state_dict(), BERT_PATH / 'model_VectorReconstructionNet_tail_pred.pt')
-        torch.save(model_head_pred.state_dict(), BERT_PATH / 'model_VectorReconstructionNet_head_pred.pt')
+        torch.save(model_tail_pred.state_dict(), SETTING_LP_MODEL_FOLDER / f'{architecture}_tail_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
+        torch.save(model_head_pred.state_dict(), SETTING_LP_MODEL_FOLDER / f'{architecture}__head_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
 
     train_data = pd.DataFrame(train_data)
-    with open('train_data.pickle', 'wb') as handle:
-        pickle.dump(train_data,handle)
-    train_data.to_csv(BERT_PATH / f"{architecture}_{args.relationfeatures}_train_data.csv")
+    train_data.to_csv(SETTING_LP_DATA_FOLDER / f"{architecture}_{args.relationfeatures}_train_data.csv")
+
+    # plotting
+    pl = train_data[1:].plot(x='epochs',y='mr')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_mr.pdf')
+
+    pl = train_data[1:].plot(x='epochs',y='loss')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_loss.pdf')
+
+    pl = train_data[1:].plot(x='epochs',y='mrr')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_mrr.pdf')
+
+    pl = train_data[1:].plot(x='epochs',y='hits10')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_hits10.pdf')
+
+    pl = train_data[1:].plot(x='epochs',y='hits3')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_hits3.pdf')
+
+    pl = train_data[1:].plot(x='epochs',y='hits1')
+    pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_hits1.pdf')
+
+    if architecture == 'VectorReconstructionNet':
+        pl = train_data[1:].plot(x='epochs',y='loss_tail')
+        pl.figure.savefig(SETTING_LP_PLOT_FOLDER / f'{architecture}_{args.relationfeatures}_loss_tail.pdf')
+
