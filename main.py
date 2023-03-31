@@ -76,7 +76,7 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
 
     x_entity = []
     # batch here?!
-    for e in tqdm(entities,desc='berting entities'):
+    for e in tqdm(entities,desc='berting entities_or_relations'):
             x_entity.append(torch.squeeze(bert_embs(['http://example.org' + e])))
     
     x_entity = torch.stack(x_entity)
@@ -313,7 +313,7 @@ def compute_mrr_vector_reconstruction(model_tail_pred, model_head_pred, entity_f
     :param relation_features:
     :param edge_index:
     :param edge_type:
-    :param entities_idx: entities not in the considered graph - only required in the inductive setting
+    :param entities_idx: entities_or_relations not in the considered graph - only required in the inductive setting
     :param fast:
     :param inductive:
     :return:
@@ -426,8 +426,8 @@ def train(config):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='rdf2vec link prediction')
-    # specify dataset
-    parser.add_argument('--dataset', type=str, default='fb15k', help='fb15k or fb15-237 or ilpc')
+    # specify datapath
+    parser.add_argument('--datapath', type=str, default='fb15k', help='fb15k or fb15-237 or ilpc')
     parser.add_argument('--architecture', type=str, default='ClassicLinkPredNet',
                         help="ClassicLinkPredNet or VectorReconstructionNet or DistMultNet or ComplExNet")
     parser.add_argument('--relationfeatures', type=str, default='standard',
@@ -443,7 +443,7 @@ if __name__ == '__main__':
     parser.add_argument('--bert-path', type=str, default='tiny_bert_from_scratch_simple',
                         help="Path to bert model. ")
 
-    parser.add_argument('--epochs', type=int, default='1000',
+    parser.add_argument('--ep', type=int, default='1000',
                         help="Epochs of prediction model.")
 
     args = parser.parse_args()
@@ -529,7 +529,7 @@ if __name__ == '__main__':
         print("Dataset not implemented!")
         exit(0)
     if dataset in ['fb15k', 'fb15k-237']:
-        # read in entities and relations for indexing
+        # read in entities_or_relations and relations for indexing
         entities = set()
         relations = set()
         for graph in ['train', 'valid', 'test']:
@@ -547,7 +547,7 @@ if __name__ == '__main__':
         print('num_entities:', num_entities)
 
         # load RDF2Vec models for features
-        wv_model = None# Word2Vec.load(f'./data/{dataset}_rdf2vec/model')
+        wv_model = None# Word2Vec.load(f'./data/{datapath}_rdf2vec/model')
 
         if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt"):
             data_train = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
