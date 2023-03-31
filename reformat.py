@@ -24,7 +24,7 @@ def reformat_rebel():
                     for line in rebel_in:
                         rebel_doc = json.loads(line)
                         text = rebel_doc['text'].rstrip().lstrip().replace('\n', ' ')
-                        for entity in rebel_doc['entities']:
+                        for entity in rebel_doc['entities_or_relations']:
                             uri = entity['uri']
                             if uri.startswith('Q'):
                                 text = text.replace(entity['surfaceform'], ' http://wd/' + uri + ' ')
