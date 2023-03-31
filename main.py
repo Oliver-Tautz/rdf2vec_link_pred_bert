@@ -568,9 +568,9 @@ if __name__ == '__main__':
                                      wv_model=wv_model, relation_embeddings=relation_embeddings)
             torch.save(data_test, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt")
 
-        data_train = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt")
-        data_val = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt")
-        data_test = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt")
+        data_train = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt", map_location=DEVICE)
+        data_val = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt", map_location=DEVICE)
+        data_test = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt", map_location=DEVICE)
 
     if dataset == 'ilpc':
         wv_type = args.wv
@@ -694,7 +694,7 @@ if __name__ == '__main__':
 
         loss_function = MSELoss()  # CosineEmbeddingLoss()
 
-        for epoch in range(1, EPOCHS):
+        for epoch in range(0, EPOCHS):
             model_tail_pred, loss_tail = train_vector_reconstruction(model_tail_pred, optimizer_tail_pred, 'head')
             model_head_pred, loss_head = train_vector_reconstruction(model_head_pred, optimizer_head_pred, 'tail')
 
@@ -703,8 +703,8 @@ if __name__ == '__main__':
                                                                                          model_head_pred,
                                                                                          x_entity,
                                                                                          x_relation,
-                                                                                         val_edge_index,
-                                                                                         val_edge_type,
+                                                                                         data_val.edge_index,
+                                                                                         data_val.edge_type,
                                                                                          fast=True,
                                                                                          entities_idx=entities_inference_idx)
                 add_train_data(mrr, mr, hits10, hits5, hits3, hits1,loss_head,loss_tail,epoch)
@@ -714,8 +714,8 @@ if __name__ == '__main__':
                                                                                  model_head_pred,
                                                                                  x_entity,
                                                                                  x_relation,
-                                                                                 val_edge_index,
-                                                                                 val_edge_type,
+                                                                                 data_val.edge_index,
+                                                                                 data_val.edge_type,
                                                                                  fast=False,
                                                                                  entities_idx=entities_inference_idx)
         add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'val')                                                                         
@@ -724,8 +724,8 @@ if __name__ == '__main__':
                                                                                  model_head_pred,
                                                                                  x_entity,
                                                                                  x_relation,
-                                                                                 test_edge_index,
-                                                                                 test_edge_type,
+                                                                                 data_test.edge_index,
+                                                                                 data_test.edge_type,
                                                                                  fast=False,
                                                                                  entities_idx=entities_inference_idx)
         add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'test')                                                                           
