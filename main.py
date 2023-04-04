@@ -431,6 +431,9 @@ if __name__ == '__main__':
     parser.add_argument('--hidden', type=int, default=200, help="hidden dim")
     parser.add_argument('--wv', type=str, default='ilpc_rebel',
                         help="only for ilpc: ilpc_rebel or ilpc_joint2vec or ilpc_hybrid2vec")
+    parser.add_argument('--epochs', type=int, default=1000,
+                        help="epochs to train classifiers for.")
+
 
     parser.add_argument('--device', type=str, default='cpu',
                         help="cpu, cuda, cuda:0, cuda:1")
