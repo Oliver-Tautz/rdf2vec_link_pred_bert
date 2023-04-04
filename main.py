@@ -28,7 +28,7 @@ from transformers import AutoModel
 import pickle
 from utils_bert_models import BertKGEmb
 
-()
+
 
 
 def plot_train_data(folder, train_data, architecture, relation_features):
@@ -56,17 +56,7 @@ def plot_train_data(folder, train_data, architecture, relation_features):
         pl.figure.savefig(folder / f'{architecture}_{relation_features}_loss_tail.pdf')
 
 
-# DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-def get_embeddings(entities, bert_model, tokenizer):
-    entities = [tokenizer.encode(x) for x in np.array(entities)]
-    embeddings = model(torch.tensor(entities).to(DEVICE))
-    embeddings = embeddings['last_hidden_state'][:, 1]
-    return embeddings
 
-
-# helper function using global variables. Pretty hacky 
-def bert_embs(entities):
-    return get_embeddings(entities, model, tz)
 
 
 def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embeddings=False):
@@ -84,7 +74,7 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
     x_entity = []
     # batch here?!
     for e in tqdm(entities, desc='berting entities_or_relations'):
-        x_entity.append(torch.squeeze(bert_embs(['http://example.org' + e])))
+        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + e])))
 
     x_entity = torch.stack(x_entity)
 
@@ -95,12 +85,12 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
         for (head, tail), relation in zip(edge_index, edge_type):
             relation_dict['http://example.org' + relations[relation]].append(x_entity[head] - x_entity[tail])
         for r in tqdm(relations, desc='berting derived relations'):
-            x_relation.append(torch.squeeze(bert_embs(['http://example.org' + r])))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + r])))
         x_relation = torch.stack(x_relation)
     else:
         x_relation = []
         for r in tqdm(relations, desc='berting relations'):
-            x_relation.append(torch.squeeze(bert_embs(['http://example.org' + r])))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + r],relations=True)))
         x_relation = torch.stack(x_relation)
     print('X_Entity Shape:', x_entity.shape)
     print('X_Relation Shape:', x_relation.shape)
@@ -460,6 +450,7 @@ if __name__ == '__main__':
     ### Load Bert
     # global variables are really hacky but fast to implement
     global BERT_PATH
+
     BERT_PATH = Path(args.bert_path)
     cfg_parser = configparser.ConfigParser(allow_no_value=True)
     cfg_parser.read(BERT_PATH / 'config.ini')
@@ -508,9 +499,9 @@ if __name__ == '__main__':
             global bertKgEmb
             if args.bert_mode != 'single':
                 bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depths=args.bert_mode_depth,
-                                      device=DEVICE, use_best_eval=args.bert_best_eval)
+                                      device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
             else:
-                bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval)
+                bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
         except Exception as e:
             print("Cant load Bert model!")
             print('Exception was: ', e)
@@ -532,7 +523,6 @@ if __name__ == '__main__':
 
     run_name = 'rdf2vec_link_pred' + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    model.to(DEVICE)
 
     # only required for inductive link prediction
     entities_train_idx = None
