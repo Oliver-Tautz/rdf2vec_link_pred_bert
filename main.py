@@ -1,3 +1,7 @@
+import sys
+
+sys.path.append('../src')
+
 import argparse
 import os
 import os.path as osp
@@ -22,45 +26,48 @@ import pandas as pd
 from transformers import PreTrainedTokenizerFast
 from transformers import AutoModel
 import pickle
+from utils_bert_models import BertKGEmb
 
-def plot_train_data(folder,train_data,architecture,relation_features):
-    
+()
+
+
+def plot_train_data(folder, train_data, architecture, relation_features):
     # plotting
-    pl = train_data[1:].plot(x='epoch',y='mr')
+    pl = train_data[1:].plot(x='epoch', y='mr')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_mr.pdf')
 
-    pl = train_data[1:].plot(x='epoch',y='loss')
+    pl = train_data[1:].plot(x='epoch', y='loss')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_loss.pdf')
 
-    pl = train_data[1:].plot(x='epoch',y='mrr')
+    pl = train_data[1:].plot(x='epoch', y='mrr')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_mrr.pdf')
 
-    pl = train_data[1:].plot(x='epoch',y='hits@10')
+    pl = train_data[1:].plot(x='epoch', y='hits@10')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_hits10.pdf')
 
-    pl = train_data[1:].plot(x='epoch',y='hits@3')
+    pl = train_data[1:].plot(x='epoch', y='hits@3')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_hits3.pdf')
 
-    pl = train_data[1:].plot(x='epoch',y='hits@1')
+    pl = train_data[1:].plot(x='epoch', y='hits@1')
     pl.figure.savefig(folder / f'{architecture}_{relation_features}_hits1.pdf')
 
     if architecture == 'VectorReconstructionNet':
-        pl = train_data[1:].plot(x='epoch',y='loss_tail')
+        pl = train_data[1:].plot(x='epoch', y='loss_tail')
         pl.figure.savefig(folder / f'{architecture}_{relation_features}_loss_tail.pdf')
 
 
-
 # DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-def get_embeddings(entities,bert_model,tokenizer):
+def get_embeddings(entities, bert_model, tokenizer):
     entities = [tokenizer.encode(x) for x in np.array(entities)]
     embeddings = model(torch.tensor(entities).to(DEVICE))
-    embeddings = embeddings['last_hidden_state'][:,1]
+    embeddings = embeddings['last_hidden_state'][:, 1]
     return embeddings
-  
+
 
 # helper function using global variables. Pretty hacky 
 def bert_embs(entities):
-    return get_embeddings(entities,model,tz)
+    return get_embeddings(entities, model, tz)
+
 
 def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embeddings=False):
     edge_index = []
@@ -69,18 +76,17 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
     with open(f'{path}/{data_sample}.txt') as triples_in_f:
         triples_in = triples_in_f.readlines()
         triples_in_f.close()
-        for line in tqdm(triples_in,desc='preprocessing triples'):
+        for line in tqdm(triples_in, desc='preprocessing triples'):
             head, relation, tail = line[:-1].split('\t')
             edge_index.append([entities.index(head), entities.index(tail)])
             edge_type.append(relations.index(relation))
 
     x_entity = []
     # batch here?!
-    for e in tqdm(entities,desc='berting entities_or_relations'):
-            x_entity.append(torch.squeeze(bert_embs(['http://example.org' + e])))
-    
-    x_entity = torch.stack(x_entity)
+    for e in tqdm(entities, desc='berting entities_or_relations'):
+        x_entity.append(torch.squeeze(bert_embs(['http://example.org' + e])))
 
+    x_entity = torch.stack(x_entity)
 
     if not relation_embeddings:
         # derive features according to Paulheim et al.
@@ -88,19 +94,19 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
         x_relation = []
         for (head, tail), relation in zip(edge_index, edge_type):
             relation_dict['http://example.org' + relations[relation]].append(x_entity[head] - x_entity[tail])
-        for r in tqdm(relations,desc='berting derived relations'):
+        for r in tqdm(relations, desc='berting derived relations'):
             x_relation.append(torch.squeeze(bert_embs(['http://example.org' + r])))
         x_relation = torch.stack(x_relation)
     else:
         x_relation = []
-        for r in tqdm(relations,desc='berting relations'):
+        for r in tqdm(relations, desc='berting relations'):
             x_relation.append(torch.squeeze(bert_embs(['http://example.org' + r])))
         x_relation = torch.stack(x_relation)
-    print('X_Entity Shape:',x_entity.shape)
-    print('X_Relation Shape:',x_relation.shape)
-    print('Edge Shape:',torch.tensor(edge_index).t().shape)
-    print('EdgeType Shape:',torch.tensor(edge_type).shape)
-    
+    print('X_Entity Shape:', x_entity.shape)
+    print('X_Relation Shape:', x_relation.shape)
+    print('Edge Shape:', torch.tensor(edge_index).t().shape)
+    print('EdgeType Shape:', torch.tensor(edge_type).shape)
+
     return Data(x_entity=x_entity,
                 x_relation=x_relation,
                 edge_index=torch.tensor(edge_index).t(),
@@ -142,7 +148,7 @@ def train_vector_reconstruction(model, optimizer, entity_input='head'):
     end = time.time()
     print('esapsed time:', end - start)
     print('loss:', loss_total / len(edge_index_batches))
-    return model, (loss_total/len(edge_index_batches))
+    return model, (loss_total / len(edge_index_batches))
 
 
 def negative_sampling(edge_index, num_nodes):
@@ -206,13 +212,12 @@ def train_triple_scoring(model, optimizer, model_type='ClassicLinkPredNet'):
     end = time.time()
     print('esapsed time:', end - start)
     print('loss:', loss_total / len(edge_index_batches))
-    return model, loss_total/len(edge_index_batches)
+    return model, loss_total / len(edge_index_batches)
 
 
 @torch.no_grad()
 def compute_mrr_triple_scoring(model, eval_edge_index, eval_edge_type,
                                fast=False, entities_idx=None, model_type='ClassicLinkPredNet'):
-
     if entities_idx:
         # inverse relevant_entities_idx
         entities_idx = torch.tensor(entities_idx)
@@ -250,7 +255,6 @@ def compute_mrr_triple_scoring(model, eval_edge_index, eval_edge_type,
         if model_type == 'ComplExNet':
             out = model.forward(h, r, t, head.to(DEVICE), eval_edge_typ_tensor.to(DEVICE), tail.to(DEVICE))
 
-
         rank = compute_rank(out)
         ranks.append(rank)
 
@@ -286,9 +290,9 @@ def compute_mrr_triple_scoring(model, eval_edge_index, eval_edge_type,
     num_ranks = len(ranks)
     ranks = torch.tensor(ranks, dtype=torch.float)
     return (1. / ranks).mean(), ranks.mean(), ranks[ranks <= 10].size(0) / num_ranks, \
-           ranks[ranks <= 5].size(0) / num_ranks, \
-           ranks[ranks <= 3].size(0) / num_ranks, \
-           ranks[ranks <= 1].size(0) / num_ranks
+                                              ranks[ranks <= 5].size(0) / num_ranks, \
+                                              ranks[ranks <= 3].size(0) / num_ranks, \
+                                              ranks[ranks <= 1].size(0) / num_ranks
 
 
 @torch.no_grad()
@@ -389,9 +393,9 @@ def compute_mrr_vector_reconstruction(model_tail_pred, model_head_pred, entity_f
     num_ranks = len(ranks)
     ranks = torch.tensor(ranks, dtype=torch.float)
     return (1. / ranks).mean(), ranks.mean(), ranks[ranks <= 10].size(0) / num_ranks, \
-           ranks[ranks <= 5].size(0) / num_ranks, \
-           ranks[ranks <= 3].size(0) / num_ranks, \
-           ranks[ranks <= 1].size(0) / num_ranks
+                                              ranks[ranks <= 5].size(0) / num_ranks, \
+                                              ranks[ranks <= 3].size(0) / num_ranks, \
+                                              ranks[ranks <= 1].size(0) / num_ranks
 
 
 def get_ilpc_entities_relations():
@@ -442,28 +446,34 @@ if __name__ == '__main__':
                         help="cpu, cuda, cuda:0, cuda:1")
     parser.add_argument('--bert-path', type=str, default='tiny_bert_from_scratch_simple',
                         help="Path to bert model. ")
-
     parser.add_argument('--ep', type=int, default='1000',
                         help="Epochs of prediction model.")
+    parser.add_argument('--bert-mode', type=str, default='single',
+                        help="single or walks")
+    parser.add_argument('--bert-best-eval', action='store_true',
+                        help='use checkpoint with best eval loss using early stopping.')
+    parser.add_argument('--bert-mode-depth', type=int, default=3,
+                        help="sdepth of walks for embedding.")
 
     args = parser.parse_args()
 
     ### Load Bert
     # global variables are really hacky but fast to implement
-    global BERT_PATH 
+    global BERT_PATH
     BERT_PATH = Path(args.bert_path)
     cfg_parser = configparser.ConfigParser(allow_no_value=True)
     cfg_parser.read(BERT_PATH / 'config.ini')
-    EMBEDDING_DIM = cfg_parser.getint('TRAIN','VECTOR_SIZE')
+    EMBEDDING_DIM = cfg_parser.getint('TRAIN', 'VECTOR_SIZE')
     EPOCHS = args.epochs
 
+    train_data = {'mrr': [], 'mr': [], 'hits@10': [], 'hits@5': [], 'hits@3': [], 'hits@1': [], 'loss': [],
+                  'loss_tail': [], 'epoch': []}
 
-    train_data = {'mrr' :[], 'mr': [], 'hits@10' :[], 'hits@5':[], 'hits@3':[], 'hits@1' :[],'loss':[],'loss_tail':[],'epoch':[]}
 
-    def add_train_data(mrr, mr, hits10, hits5, hits3, hits1,loss,loss_tail,epoch):
+    def add_train_data(mrr, mr, hits10, hits5, hits3, hits1, loss, loss_tail, epoch):
         train_data['mrr'].append(mrr.cpu().detach().item())
-        train_data['mr'].append(mr.cpu().detach().item())            
-        train_data['hits@10'].append(hits10)    
+        train_data['mr'].append(mr.cpu().detach().item())
+        train_data['hits@10'].append(hits10)
         train_data['hits@5'].append(hits5)
         train_data['hits@3'].append(hits3)
         train_data['hits@1'].append(hits1)
@@ -474,27 +484,12 @@ if __name__ == '__main__':
         if loss_tail:
             train_data['loss_tail'].append(loss_tail.cpu().detach().item())
         else:
-            train_data['loss_tail'].append(None)    
+            train_data['loss_tail'].append(None)
         if epoch:
             train_data['epoch'].append(epoch)
         else:
             train_data['epoch'].append(None)
 
-
-    if not BERT_PATH.is_dir():
-        print("Bert model does not exist!")
-        exit(-1)
-    else:
-        global tz
-        global model
-        try:
-            tz = PreTrainedTokenizerFast(tokenizer_file=str(BERT_PATH / "tokenizer.json"))
-            model = AutoModel.from_pretrained(BERT_PATH / "model")
-        except Exception as e:
-            print("Cant load Bert model!")
-            print('Exception was: ', e)
-            exit(-1)
-    ###
 
     SETTING_LP_WORK_FOLDER = BERT_PATH / 'link_prediction'
     SETTING_LP_EMBEDDINGS_FOLDER = SETTING_LP_WORK_FOLDER / 'embeddings'
@@ -502,10 +497,30 @@ if __name__ == '__main__':
     SETTING_LP_PLOT_FOLDER = SETTING_LP_WORK_FOLDER / 'plot'
     SETTING_LP_MODEL_FOLDER = SETTING_LP_WORK_FOLDER / 'model'
 
-    os.makedirs(SETTING_LP_EMBEDDINGS_FOLDER,exist_ok=True)
-    os.makedirs(SETTING_LP_DATA_FOLDER,exist_ok=True)
-    os.makedirs(SETTING_LP_PLOT_FOLDER,exist_ok=True)
-    os.makedirs(SETTING_LP_MODEL_FOLDER,exist_ok=True)
+    DEVICE = torch.device(args.device)
+    if not BERT_PATH.is_dir():
+        print("Bert model does not exist!")
+        exit(-1)
+    else:
+
+        try:
+
+            global bertKgEmb
+            if args.bert_mode != 'single':
+                bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depths=args.bert_mode_depth,
+                                      device=DEVICE, use_best_eval=args.bert_best_eval)
+            else:
+                bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval)
+        except Exception as e:
+            print("Cant load Bert model!")
+            print('Exception was: ', e)
+            exit(-1)
+    ###
+
+    os.makedirs(SETTING_LP_EMBEDDINGS_FOLDER, exist_ok=True)
+    os.makedirs(SETTING_LP_DATA_FOLDER, exist_ok=True)
+    os.makedirs(SETTING_LP_PLOT_FOLDER, exist_ok=True)
+    os.makedirs(SETTING_LP_MODEL_FOLDER, exist_ok=True)
 
     dataset = args.dataset
     inductive = dataset == 'ilpc'
@@ -515,17 +530,15 @@ if __name__ == '__main__':
     BATCH_SIZE = args.bs  # 1000
     HIDDEN_DIM = args.hidden
 
-
     run_name = 'rdf2vec_link_pred' + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    DEVICE = torch.device(args.device)
     model.to(DEVICE)
 
     # only required for inductive link prediction
     entities_train_idx = None
     entities_inference_idx = None
 
-    if dataset not in ['fb15k', 'fb15k-237','ilpc']:
+    if dataset not in ['fb15k', 'fb15k-237', 'ilpc']:
         print("Dataset not implemented!")
         exit(0)
     if dataset in ['fb15k', 'fb15k-237']:
@@ -547,7 +560,7 @@ if __name__ == '__main__':
         print('num_entities:', num_entities)
 
         # load RDF2Vec models for features
-        wv_model = None# Word2Vec.load(f'./data/{datapath}_rdf2vec/model')
+        wv_model = None  # Word2Vec.load(f'./data/{datapath}_rdf2vec/model')
 
         if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt"):
             data_train = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
@@ -559,7 +572,7 @@ if __name__ == '__main__':
             data_val = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
                                     data_sample='valid',
                                     wv_model=wv_model, relation_embeddings=relation_embeddings)
-            print('saving' , str(BERT_PATH / f"{dataset}_val.pt"))
+            print('saving', str(BERT_PATH / f"{dataset}_val.pt"))
             torch.save(data_val, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt")
 
         if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt"):
@@ -639,7 +652,6 @@ if __name__ == '__main__':
             "wandb": {"project": run_name},
         }
 
-
         if architecture == 'ClassicLinkPredNet':
             model = ClassicLinkPredNet(EMBEDDING_DIM, HIDDEN_DIM)
         if architecture == 'DistMultNet':
@@ -661,7 +673,7 @@ if __name__ == '__main__':
                                                                                   fast=True,
                                                                                   entities_idx=entities_inference_idx,
                                                                                   model_type=architecture)
-                add_train_data(mrr, mr, hits10, hits5, hits3, hits1,loss,None,epoch)
+                add_train_data(mrr, mr, hits10, hits5, hits3, hits1, loss, None, epoch)
                 print('mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
 
         torch.save(model.state_dict(), BERT_PATH / 'model_ClassicLinkPredNet.pt')
@@ -670,14 +682,14 @@ if __name__ == '__main__':
                                                                           val_edge_type,
                                                                           fast=False,
                                                                           entities_idx=entities_inference_idx)
-        add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'val')
+        add_train_data(mrr, mr, hits10, hits5, hits3, hits1, None, None, 'val')
         print('val mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
         mrr, mr, hits10, hits5, hits3, hits1 = compute_mrr_triple_scoring(model,
                                                                           test_edge_index,
                                                                           test_edge_type,
                                                                           fast=False,
                                                                           entities_idx=entities_inference_idx)
-        add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'test')
+        add_train_data(mrr, mr, hits10, hits5, hits3, hits1, None, None, 'test')
         print('test mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
 
     # VectorReconstructionNet
@@ -707,7 +719,7 @@ if __name__ == '__main__':
                                                                                          data_val.edge_type,
                                                                                          fast=True,
                                                                                          entities_idx=entities_inference_idx)
-                add_train_data(mrr, mr, hits10, hits5, hits3, hits1,loss_head,loss_tail,epoch)
+                add_train_data(mrr, mr, hits10, hits5, hits3, hits1, loss_head, loss_tail, epoch)
                 print('mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
 
         mrr, mr, hits10, hits5, hits3, hits1 = compute_mrr_vector_reconstruction(model_tail_pred,
@@ -718,7 +730,7 @@ if __name__ == '__main__':
                                                                                  data_val.edge_type,
                                                                                  fast=False,
                                                                                  entities_idx=entities_inference_idx)
-        add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'val')                                                                         
+        add_train_data(mrr, mr, hits10, hits5, hits3, hits1, None, None, 'val')
         print('val mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
         mrr, mr, hits10, hits5, hits3, hits1 = compute_mrr_vector_reconstruction(model_tail_pred,
                                                                                  model_head_pred,
@@ -728,14 +740,14 @@ if __name__ == '__main__':
                                                                                  data_test.edge_type,
                                                                                  fast=False,
                                                                                  entities_idx=entities_inference_idx)
-        add_train_data(mrr, mr, hits10, hits5, hits3, hits1,None,None,'test')                                                                           
+        add_train_data(mrr, mr, hits10, hits5, hits3, hits1, None, None, 'test')
         print('test mrr:', mrr, 'mr:', mr, 'hits@10:', hits10, 'hits@5:', hits5, 'hits@3:', hits3, 'hits@1:', hits1)
-        torch.save(model_tail_pred.state_dict(), SETTING_LP_MODEL_FOLDER / f'{architecture}_tail_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
-        torch.save(model_head_pred.state_dict(), SETTING_LP_MODEL_FOLDER / f'{architecture}__head_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
+        torch.save(model_tail_pred.state_dict(),
+                   SETTING_LP_MODEL_FOLDER / f'{architecture}_tail_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
+        torch.save(model_head_pred.state_dict(),
+                   SETTING_LP_MODEL_FOLDER / f'{architecture}__head_pred_{args.relationfeatures}_ep{EPOCHS}.pt')
 
     # Save and plot train data
     train_data = pd.DataFrame(train_data)
     train_data.to_csv(SETTING_LP_DATA_FOLDER / f"{architecture}_{args.relationfeatures}_train_data.csv")
-    plot_train_data(SETTING_LP_PLOT_FOLDER,train_data,architecture,args.relationfeatures)
-
-
+    plot_train_data(SETTING_LP_PLOT_FOLDER, train_data, architecture, args.relationfeatures)
