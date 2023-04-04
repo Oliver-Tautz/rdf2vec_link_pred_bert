@@ -421,7 +421,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='rdf2vec link prediction')
     # specify datapath
-    parser.add_argument('--datapath', type=str, default='fb15k', help='fb15k or fb15-237 or ilpc')
+    parser.add_argument('--dataset', type=str, default='fb15k', help='fb15k or fb15-237 or ilpc')
     parser.add_argument('--architecture', type=str, default='ClassicLinkPredNet',
                         help="ClassicLinkPredNet or VectorReconstructionNet or DistMultNet or ComplExNet")
     parser.add_argument('--relationfeatures', type=str, default='standard',
