@@ -501,7 +501,7 @@ if __name__ == '__main__':
 
             global bertKgEmb
             if args.bert_mode != 'single':
-                bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depths=args.bert_mode_depth,
+                bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depth=args.bert_mode_depth,
                                       device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
             else:
                 bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
