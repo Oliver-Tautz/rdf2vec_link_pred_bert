@@ -31,6 +31,7 @@ from utils_bert_models import BertKGEmb
 
 
 
+
 def plot_train_data(folder, train_data, architecture, relation_features):
     # plotting
     pl = train_data[1:].plot(x='epoch', y='mr')
