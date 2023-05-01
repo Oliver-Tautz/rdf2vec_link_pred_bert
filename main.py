@@ -486,7 +486,7 @@ if __name__ == '__main__':
             train_data['epoch'].append(None)
 
     SETTING_BERT_MODE = args.bert_mode
-    SETTING_BERT_DEPTH = args.args.bert_mode_depth
+    SETTING_BERT_DEPTH = args.bert_mode_depth
     SETTINGS_BERT_BEST_EVAL = args.bert_best_eval
 
     SETTING_LP_WORK_FOLDER = BERT_PATH / 'link_prediction' / f'{SETTING_BERT_MODE}_depth={SETTING_BERT_DEPTH}_best={SETTINGS_BERT_BEST_EVAL}'
