@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append('../src')
-
+from urllib.parse import urljoin
 import argparse
 import os
 import os.path as osp
@@ -67,7 +67,7 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
     with open(f'{path}/{data_sample}.txt') as triples_in_f:
         triples_in = triples_in_f.readlines()
         triples_in_f.close()
-        for line in tqdm(triples_in, desc='preprocessing triples'):
+        for line in tqdm(triples_in, desc='preprocessing input'):
             head, relation, tail = line[:-1].split('\t')
             edge_index.append([entities.index(head), entities.index(tail)])
             edge_type.append(relations.index(relation))
@@ -75,23 +75,23 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
     x_entity = []
     # batch here?!
     for e in tqdm(entities, desc='berting entities_or_relations'):
-        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + e])))
+        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , e)])))
 
     x_entity = torch.stack(x_entity)
 
     if not relation_embeddings:
         # derive features according to Paulheim et al.
-        relation_dict = {'http://example.org' + r: [] for r in relations}
+        relation_dict = {urljoin('http://example.org' , r): [] for r in relations}
         x_relation = []
         for (head, tail), relation in zip(edge_index, edge_type):
-            relation_dict['http://example.org' + relations[relation]].append(x_entity[head] - x_entity[tail])
+            relation_dict[urljoin('http://example.org' , relations[relation])].append(x_entity[head] - x_entity[tail])
         for r in tqdm(relations, desc='berting derived relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + r])))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , r)])))
         x_relation = torch.stack(x_relation)
     else:
         x_relation = []
         for r in tqdm(relations, desc='berting relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings(['http://example.org' + r],relations=True)))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , r)],relations=True)))
         x_relation = torch.stack(x_relation)
     print('X_Entity Shape:', x_entity.shape)
     print('X_Relation Shape:', x_relation.shape)
@@ -193,7 +193,7 @@ def train_triple_scoring(model, optimizer, model_type='ClassicLinkPredNet'):
                                 torch.cat([relation_idx, relation_idx], dim=0),
                                 torch.cat([edge_idxs[:, 1], edge_idxs_neg[:, 1]], dim=0))
 
-        # classification target: first for true, then for corrupted triples
+        # classification target: first for true, then for corrupted input
         gt = torch.cat([torch.ones(len(relation_idx)), torch.zeros(len(relation_idx))], dim=0).to(DEVICE)
 
         loss = loss_function(out, gt)
@@ -426,7 +426,7 @@ if __name__ == '__main__':
     parser.add_argument('--architecture', type=str, default='ClassicLinkPredNet',
                         help="ClassicLinkPredNet or VectorReconstructionNet or DistMultNet or ComplExNet")
     parser.add_argument('--relationfeatures', type=str, default='standard',
-                        help="standard (use the ones trained by RDF2Vec) or derived (derive them form the entity features automatically)")
+                        help="standard (use the ones trained by RDF2Vec) or derived (derive them form the path features automatically)")
     parser.add_argument('--lr', type=float, default=.001, help="learning rate")
     parser.add_argument('--bs', type=int, default=1000, help="learning rate")
     parser.add_argument('--hidden', type=int, default=200, help="hidden dim")
@@ -535,7 +535,7 @@ if __name__ == '__main__':
     entities_train_idx = None
     entities_inference_idx = None
 
-    if dataset not in ['fb15k', 'fb15k-237', 'ilpc']:
+    if dataset not in ['fb15k', 'fb15k-237', 'ilpc','codex']:
         print("Dataset not implemented!")
         exit(0)
     if dataset in ['fb15k', 'fb15k-237']:
@@ -549,11 +549,59 @@ if __name__ == '__main__':
                     entities.add(head)
                     entities.add(tail)
                     relations.add(relation)
+
         entities = list(entities)
         relations = list(relations)
-
         num_entities = len(entities)
 
+        print(entities[0:10],'aaaaa')
+        print(relations[0:10],'aaaaa')
+        print('num_entities:', num_entities)
+
+        # load RDF2Vec models for features
+        wv_model = None  # Word2Vec.load(f'./data/{datapath}_rdf2vec/model')
+
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt"):
+            data_train = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
+                                      data_sample='train', wv_model=wv_model,
+                                      relation_embeddings=relation_embeddings)
+            torch.save(data_train, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt")
+
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt"):
+            data_val = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
+                                    data_sample='valid',
+                                    wv_model=wv_model, relation_embeddings=relation_embeddings)
+            print('saving', str(BERT_PATH / f"{dataset}_val.pt"))
+            torch.save(data_val, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt")
+
+        if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt"):
+            data_test = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
+                                     data_sample='test',
+                                     wv_model=wv_model, relation_embeddings=relation_embeddings)
+            torch.save(data_test, SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt")
+
+        data_train = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt", map_location=DEVICE)
+        data_val = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_val.pt", map_location=DEVICE)
+        data_test = torch.load(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_test.pt", map_location=DEVICE)
+
+    if dataset == 'codex':
+        # read in entities_or_relations and relations for indexing
+        entities = set()
+        relations = set()
+        for graph in ['train', 'valid', 'test']:
+            with open(f'./data/{dataset}/{graph}.txt') as triples_in:
+                for line in triples_in:
+                    head, relation, tail = line.strip().split('\t')
+                    entities.add(head)
+                    entities.add(tail)
+                    relations.add(relation)
+
+        entities = list(entities)
+        relations = list(relations)
+        num_entities = len(entities)
+
+        print(entities[0:10], 'aaaaa')
+        print(relations[0:10], 'aaaaa')
         print('num_entities:', num_entities)
 
         # load RDF2Vec models for features
