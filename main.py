@@ -75,23 +75,24 @@ def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embe
     x_entity = []
     # batch here?!
     for e in tqdm(entities, desc='berting entities_or_relations'):
-        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , e)])))
+        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , e)])))
 
     x_entity = torch.stack(x_entity)
 
+
     if not relation_embeddings:
         # derive features according to Paulheim et al.
-        relation_dict = {urljoin('http://example.org' , r): [] for r in relations}
+        relation_dict = {urljoin(bertKgEmb.entity_base_url , r): [] for r in relations}
         x_relation = []
         for (head, tail), relation in zip(edge_index, edge_type):
-            relation_dict[urljoin('http://example.org' , relations[relation])].append(x_entity[head] - x_entity[tail])
+            relation_dict[urljoin(bertKgEmb.entity_base_url , relations[relation])].append(x_entity[head] - x_entity[tail])
         for r in tqdm(relations, desc='berting derived relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , r)])))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)])))
         x_relation = torch.stack(x_relation)
     else:
         x_relation = []
         for r in tqdm(relations, desc='berting relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin('http://example.org' , r)],relations=True)))
+            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)],relations=True)))
         x_relation = torch.stack(x_relation)
     print('X_Entity Shape:', x_entity.shape)
     print('X_Relation Shape:', x_relation.shape)
@@ -509,6 +510,8 @@ if __name__ == '__main__':
                                       device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
             else:
                 bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
+
+
         except Exception as e:
             print("Cant load Bert model!")
             print('Exception was: ', e)
@@ -600,8 +603,7 @@ if __name__ == '__main__':
         relations = list(relations)
         num_entities = len(entities)
 
-        print(entities[0:10], 'aaaaa')
-        print(relations[0:10], 'aaaaa')
+
         print('num_entities:', num_entities)
 
         # load RDF2Vec models for features
