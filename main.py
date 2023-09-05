@@ -61,43 +61,80 @@ def plot_train_data(folder, train_data, architecture, relation_features):
 
 
 def read_lp_data(path, entities, relations, data_sample, wv_model, relation_embeddings=False):
-    edge_index = []
-    edge_type = []
-    print("processing ")
-    with open(f'{path}/{data_sample}.txt') as triples_in_f:
-        triples_in = triples_in_f.readlines()
-        triples_in_f.close()
-        for line in tqdm(triples_in, desc='preprocessing input'):
-            head, relation, tail = line[:-1].split('\t')
-            edge_index.append([entities.index(head), entities.index(tail)])
-            edge_type.append(relations.index(relation))
 
-    x_entity = []
-    # batch here?!
-    for e in tqdm(entities, desc='berting entities_or_relations'):
-        x_entity.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , e)])))
+    if not wv_model:
+        edge_index = []
+        edge_type = []
+        print("processing ")
+        with open(f'{path}/{data_sample}.txt') as triples_in_f:
+            triples_in = triples_in_f.readlines()
+            triples_in_f.close()
+            for line in tqdm(triples_in, desc='preprocessing input'):
+                head, relation, tail = line[:-1].split('\t')
+                edge_index.append([entities.index(head), entities.index(tail)])
+                edge_type.append(relations.index(relation))
 
-    x_entity = torch.stack(x_entity)
+        x_entity = []
+        # batch here?!
+        for e in tqdm(entities, desc='berting entities_or_relations'):
+            x_entity.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , e)])))
+
+        x_entity = torch.stack(x_entity)
 
 
-    if not relation_embeddings:
-        # derive features according to Paulheim et al.
-        relation_dict = {urljoin(bertKgEmb.entity_base_url , r): [] for r in relations}
-        x_relation = []
-        for (head, tail), relation in zip(edge_index, edge_type):
-            relation_dict[urljoin(bertKgEmb.entity_base_url , relations[relation])].append(x_entity[head] - x_entity[tail])
-        for r in tqdm(relations, desc='berting derived relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)])))
-        x_relation = torch.stack(x_relation)
+        if not relation_embeddings:
+            # derive features according to Paulheim et al.
+            relation_dict = {urljoin(bertKgEmb.entity_base_url , r): [] for r in relations}
+            x_relation = []
+            for (head, tail), relation in zip(edge_index, edge_type):
+                relation_dict[urljoin(bertKgEmb.entity_base_url , relations[relation])].append(x_entity[head] - x_entity[tail])
+            for r in tqdm(relations, desc='berting derived relations'):
+                x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)])))
+            x_relation = torch.stack(x_relation)
+        else:
+            x_relation = []
+            for r in tqdm(relations, desc='berting relations'):
+                x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)],relations=True)))
+            x_relation = torch.stack(x_relation)
+        print('X_Entity Shape:', x_entity.shape)
+        print('X_Relation Shape:', x_relation.shape)
+        print('Edge Shape:', torch.tensor(edge_index).t().shape)
+        print('EdgeType Shape:', torch.tensor(edge_type).shape)
     else:
-        x_relation = []
-        for r in tqdm(relations, desc='berting relations'):
-            x_relation.append(torch.squeeze(bertKgEmb.get_embeddings([urljoin(bertKgEmb.entity_base_url , r)],relations=True)))
-        x_relation = torch.stack(x_relation)
-    print('X_Entity Shape:', x_entity.shape)
-    print('X_Relation Shape:', x_relation.shape)
-    print('Edge Shape:', torch.tensor(edge_index).t().shape)
-    print('EdgeType Shape:', torch.tensor(edge_type).shape)
+        edge_index = []
+        edge_type = []
+
+        with open(f'{path}/{data_sample}.txt') as triples_in:
+            for line in triples_in:
+                head, relation, tail = line[:-1].split('\t')
+                edge_index.append([entities.index(head), entities.index(tail)])
+                edge_type.append(relations.index(relation))
+
+        x_entity = []
+        for e in entities:
+            if 'http://example.com/' + e in wv_model.wv:
+                x_entity.append(wv_model.wv['http://example.com/' + e])
+            else:
+                x_entity.append(np.zeros(EMBEDDING_DIM))
+        x_entity = torch.tensor(x_entity)
+
+        if not relation_embeddings:
+            # derive features according to Paulheim et al.
+            relation_dict = {'http://example.com/' + r: [] for r in relations}
+            x_relation = []
+            for (head, tail), relation in zip(edge_index, edge_type):
+                relation_dict['http://example.com/' + relations[relation]].append(x_entity[head] - x_entity[tail])
+            for r in relations:
+                if len(relation_dict['http://example.com/' + r]) > 0:
+                    x_relation.append(torch.mean(torch.stack(relation_dict['http://example.com/' + r]), dim=0))
+                else:
+                    x_relation.append(torch.zeros(EMBEDDING_DIM))
+            x_relation = torch.stack(x_relation)
+        else:
+            x_relation = []
+            for r in relations:
+                x_relation.append(wv_model.wv['http://example.com/' + r])
+            x_relation = torch.tensor(x_relation)
 
     return Data(x_entity=x_entity,
                 x_relation=x_relation,
@@ -323,8 +360,9 @@ def compute_mrr_vector_reconstruction(model_tail_pred, model_head_pred, entity_f
 
     eval_loss_function = MSELoss(reduction='none')  # CosineEmbeddingLoss(reduction='none')
 
-    num_samples = edge_type.numel() if not fast else 5000
+    num_samples = edge_type.numel() if not fast else min(edge_type.numel(),5000)
     ranks = []
+    print(num_samples)
     for i in tqdm(range(num_samples)):
         (src, dst), rel = edge_index[:, i], edge_type[i]
 
@@ -449,17 +487,26 @@ if __name__ == '__main__':
                         help='use checkpoint with best eval loss using early stopping.')
     parser.add_argument('--bert-mode-depth', type=int, default=3,
                         help="sdepth of walks for embedding.")
+    parser.add_argument('--rdf2vec', action='store_true')
+    parser.add_argument('--rdf2vec-path', type=str, default='walks',
+                        help="Path to rdf2vec vector file. ")
 
     args = parser.parse_args()
 
-    ### Load Bert
-    # global variables are really hacky but fast to implement
-    global BERT_PATH
+    if not args.rdf2vec:
+        ### Load Bert
+        # global variables are really hacky but fast to implement
+        global BERT_PATH
 
-    BERT_PATH = Path(args.bert_path)
-    cfg_parser = configparser.ConfigParser(allow_no_value=True)
-    cfg_parser.read(BERT_PATH / 'config.ini')
-    EMBEDDING_DIM = cfg_parser.getint('TRAIN', 'VECTOR_SIZE')
+        BERT_PATH = Path(args.bert_path)
+        cfg_parser = configparser.ConfigParser(allow_no_value=True)
+        cfg_parser.read(BERT_PATH / 'config.ini')
+        EMBEDDING_DIM = cfg_parser.getint('TRAIN', 'VECTOR_SIZE')
+
+    else:
+
+        EMBEDDING_DIM = 200
+
     EPOCHS = args.epochs
 
     train_data = {'mrr': [], 'mr': [], 'hits@10': [], 'hits@5': [], 'hits@3': [], 'hits@1': [], 'loss': [],
@@ -486,37 +533,52 @@ if __name__ == '__main__':
         else:
             train_data['epoch'].append(None)
 
-    SETTING_BERT_MODE = args.bert_mode
-    SETTING_BERT_DEPTH = args.bert_mode_depth
-    SETTINGS_BERT_BEST_EVAL = args.bert_best_eval
 
-    SETTING_LP_WORK_FOLDER = BERT_PATH / 'link_prediction' / f'{SETTING_BERT_MODE}_depth={SETTING_BERT_DEPTH}_best={SETTINGS_BERT_BEST_EVAL}'
-    SETTING_LP_EMBEDDINGS_FOLDER = SETTING_LP_WORK_FOLDER / 'embeddings'
-    SETTING_LP_DATA_FOLDER = SETTING_LP_WORK_FOLDER / 'data'
-    SETTING_LP_PLOT_FOLDER = SETTING_LP_WORK_FOLDER / 'plot'
-    SETTING_LP_MODEL_FOLDER = SETTING_LP_WORK_FOLDER / 'model'
+    if not args.rdf2vec:
+        SETTING_BERT_MODE = args.bert_mode
+        SETTING_BERT_DEPTH = args.bert_mode_depth
+        SETTINGS_BERT_BEST_EVAL = args.bert_best_eval
+
+        SETTING_LP_WORK_FOLDER = BERT_PATH / 'link_prediction' / f'{SETTING_BERT_MODE}_depth={SETTING_BERT_DEPTH}_best={SETTINGS_BERT_BEST_EVAL}'
+        SETTING_LP_EMBEDDINGS_FOLDER = SETTING_LP_WORK_FOLDER / 'embeddings'
+        SETTING_LP_DATA_FOLDER = SETTING_LP_WORK_FOLDER / 'data'
+        SETTING_LP_PLOT_FOLDER = SETTING_LP_WORK_FOLDER / 'plot'
+        SETTING_LP_MODEL_FOLDER = SETTING_LP_WORK_FOLDER / 'model'
+    else:
+        SETTING_RDF2VEC_PATH = Path(args.rdf2vec_path)
+
+        SETTING_LP_WORK_FOLDER = SETTING_RDF2VEC_PATH / 'link_prediction'
+        SETTING_LP_EMBEDDINGS_FOLDER = SETTING_LP_WORK_FOLDER / 'embeddings'
+        SETTING_LP_DATA_FOLDER = SETTING_LP_WORK_FOLDER / 'data'
+        SETTING_LP_PLOT_FOLDER = SETTING_LP_WORK_FOLDER / 'plot'
+        SETTING_LP_MODEL_FOLDER = SETTING_LP_WORK_FOLDER / 'model'
+
 
     DEVICE = torch.device(args.device)
-    if not BERT_PATH.is_dir():
-        print("Bert model does not exist!")
-        exit(-1)
-    else:
-
-        try:
-
-            global bertKgEmb
-            if args.bert_mode != 'single':
-                bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depth=args.bert_mode_depth,
-                                      device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
-            else:
-                bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
-
-
-        except Exception as e:
-            print("Cant load Bert model!")
-            print('Exception was: ', e)
+    if not args.rdf2vec:
+        if not BERT_PATH.is_dir():
+            print("Bert model does not exist!")
             exit(-1)
-    ###
+        else:
+
+            try:
+                wv_model = None
+                global bertKgEmb
+                if args.bert_mode != 'single':
+                    bertKgEmb = BertKGEmb(BERT_PATH, datapath="./FB15K-237/train.nt", depth=args.bert_mode_depth,
+                                          device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
+                else:
+                    bertKgEmb = BertKGEmb(BERT_PATH, device=DEVICE, use_best_eval=args.bert_best_eval,mode=args.bert_mode)
+
+
+            except Exception as e:
+                print("Cant load Bert model!")
+                print('Exception was: ', e)
+                exit(-1)
+        ###
+
+    else:
+        wv_model = Word2Vec.load(SETTING_RDF2VEC_PATH / 'model.kv')
 
     os.makedirs(SETTING_LP_EMBEDDINGS_FOLDER, exist_ok=True)
     os.makedirs(SETTING_LP_DATA_FOLDER, exist_ok=True)
@@ -562,7 +624,7 @@ if __name__ == '__main__':
         print('num_entities:', num_entities)
 
         # load RDF2Vec models for features
-        wv_model = None  # Word2Vec.load(f'./data/{datapath}_rdf2vec/model')
+
 
         if not os.path.isfile(SETTING_LP_EMBEDDINGS_FOLDER / f"{dataset}_train.pt"):
             data_train = read_lp_data(path=f'./data/{dataset}/', entities=entities, relations=relations,
